@@ -119,6 +119,285 @@
 ;; data maps and vars
 ;;
 
+;; Global Variables
+(define-data-var contract-paused bool false)
+(define-data-var total-users uint u0)
+(define-data-var total-transactions uint u0)
+(define-data-var total-wallets uint u0)
+
+;; User Management
+(define-map users
+    { user-address: principal }
+    {
+        username: (string-ascii 30),
+        email: (string-ascii 100),
+        created-at: uint,
+        last-active: uint,
+        total-transactions: uint,
+        total-wallets: uint,
+        status: (string-ascii 20),
+        preferences: {
+            default-currency: (string-ascii 10),
+            timezone: (string-ascii 50),
+            notifications-enabled: bool,
+            theme: (string-ascii 20)
+        }
+    }
+)
+
+;; Wallet Management
+(define-map wallets
+    { wallet-id: uint }
+    {
+        owner: principal,
+        name: (string-ascii 30),
+        wallet-type: (string-ascii 20),
+        currency: (string-ascii 10),
+        balance: uint,
+        created-at: uint,
+        updated-at: uint,
+        status: (string-ascii 20),
+        description: (string-ascii 200),
+        is-default: bool
+    }
+)
+
+;; Wallet Access Control (for shared wallets)
+(define-map wallet-permissions
+    { wallet-id: uint, user-address: principal }
+    {
+        permission-level: uint,
+        granted-by: principal,
+        granted-at: uint,
+        can-view: bool,
+        can-edit: bool,
+        can-delete: bool,
+        can-manage-users: bool
+    }
+)
+
+;; Transaction Records
+(define-map transactions
+    { transaction-id: uint }
+    {
+        wallet-id: uint,
+        user-address: principal,
+        transaction-type: (string-ascii 20),
+        amount: uint,
+        category: (string-ascii 50),
+        subcategory: (string-ascii 50),
+        description: (string-ascii 200),
+        date: uint,
+        created-at: uint,
+        updated-at: uint,
+        status: (string-ascii 20),
+        tags: (list 10 (string-ascii 30)),
+        reference-id: (optional (string-ascii 100)),
+        from-wallet: (optional uint),
+        to-wallet: (optional uint),
+        fee: uint,
+        exchange-rate: (optional uint),
+        location: (optional (string-ascii 100)),
+        receipt-hash: (optional (string-ascii 64))
+    }
+)
+
+;; Categories Management
+(define-map categories
+    { user-address: principal, category-name: (string-ascii 50) }
+    {
+        display-name: (string-ascii 50),
+        description: (string-ascii 200),
+        color: (string-ascii 7), ;; hex color code
+        icon: (string-ascii 20),
+        is-default: bool,
+        is-active: bool,
+        created-at: uint,
+        transaction-count: uint,
+        total-amount: uint,
+        subcategories: (list 20 (string-ascii 50))
+    }
+)
+
+;; Budget Management
+(define-map budgets
+    { budget-id: uint }
+    {
+        user-address: principal,
+        wallet-id: (optional uint),
+        name: (string-ascii 50),
+        category: (string-ascii 50),
+        amount: uint,
+        spent: uint,
+        period: (string-ascii 20),
+        start-date: uint,
+        end-date: uint,
+        created-at: uint,
+        updated-at: uint,
+        status: (string-ascii 20),
+        alert-threshold: uint,
+        auto-renew: bool,
+        notifications-sent: uint
+    }
+)
+
+;; Recurring Transactions
+(define-map recurring-transactions
+    { recurring-id: uint }
+    {
+        user-address: principal,
+        wallet-id: uint,
+        template: {
+            transaction-type: (string-ascii 20),
+            amount: uint,
+            category: (string-ascii 50),
+            description: (string-ascii 200)
+        },
+        frequency: (string-ascii 20), ;; daily, weekly, monthly, yearly
+        interval: uint, ;; every X periods
+        next-execution: uint,
+        last-execution: (optional uint),
+        executions-count: uint,
+        max-executions: (optional uint),
+        end-date: (optional uint),
+        is-active: bool,
+        created-at: uint,
+        updated-at: uint
+    }
+)
+
+;; Reports and Analytics
+(define-map reports
+    { report-id: uint }
+    {
+        user-address: principal,
+        report-type: (string-ascii 30),
+        parameters: {
+            start-date: uint,
+            end-date: uint,
+            wallet-ids: (list 10 uint),
+            categories: (list 20 (string-ascii 50))
+        },
+        generated-at: uint,
+        data-hash: (string-ascii 64),
+        status: (string-ascii 20),
+        file-url: (optional (string-ascii 200))
+    }
+)
+
+;; Notifications
+(define-map notifications
+    { notification-id: uint }
+    {
+        user-address: principal,
+        notification-type: (string-ascii 30),
+        title: (string-ascii 100),
+        message: (string-ascii 300),
+        data: (optional (string-ascii 500)), ;; JSON string for additional data
+        created-at: uint,
+        read-at: (optional uint),
+        is-read: bool,
+        priority: uint, ;; 1=low, 2=medium, 3=high, 4=urgent
+        expires-at: (optional uint)
+    }
+)
+
+;; Tags System
+(define-map transaction-tags
+    { user-address: principal, tag-name: (string-ascii 30) }
+    {
+        display-name: (string-ascii 30),
+        color: (string-ascii 7),
+        usage-count: uint,
+        created-at: uint,
+        is-active: bool
+    }
+)
+
+;; Exchange Rates (for multi-currency support when enabled)
+(define-map exchange-rates
+    { from-currency: (string-ascii 10), to-currency: (string-ascii 10) }
+    {
+        rate: uint, ;; rate * 1000000 for precision
+        last-updated: uint,
+        source: (string-ascii 50)
+    }
+)
+
+;; Session Management
+(define-map user-sessions
+    { user-address: principal }
+    {
+        session-token: (string-ascii 64),
+        created-at: uint,
+        expires-at: uint,
+        last-activity: uint,
+        ip-address: (optional (string-ascii 45)),
+        user-agent: (optional (string-ascii 200))
+    }
+)
+
+;; ID Counters
+(define-data-var next-wallet-id uint u1)
+(define-data-var next-transaction-id uint u1)
+(define-data-var next-budget-id uint u1)
+(define-data-var next-recurring-id uint u1)
+(define-data-var next-report-id uint u1)
+(define-data-var next-notification-id uint u1)
+
+;; User-specific counters
+(define-map user-counters
+    { user-address: principal }
+    {
+        transaction-count: uint,
+        wallet-count: uint,
+        category-count: uint,
+        budget-count: uint,
+        recurring-count: uint
+    }
+)
+
+;; Lookup maps for efficient queries
+(define-map user-wallets
+    { user-address: principal }
+    { wallet-ids: (list 50 uint) }
+)
+
+(define-map wallet-transactions
+    { wallet-id: uint }
+    { transaction-ids: (list 1000 uint) }
+)
+
+(define-map category-transactions
+    { user-address: principal, category: (string-ascii 50) }
+    { transaction-ids: (list 1000 uint) }
+)
+
+;; Monthly/Yearly aggregations for faster reporting
+(define-map monthly-summaries
+    { user-address: principal, year: uint, month: uint }
+    {
+        total-income: uint,
+        total-expenses: uint,
+        net-flow: int,
+        transaction-count: uint,
+        top-categories: (list 10 { category: (string-ascii 50), amount: uint }),
+        updated-at: uint
+    }
+)
+
+(define-map yearly-summaries
+    { user-address: principal, year: uint }
+    {
+        total-income: uint,
+        total-expenses: uint,
+        net-flow: int,
+        transaction-count: uint,
+        monthly-breakdown: (list 12 uint),
+        updated-at: uint
+    }
+)
+
 ;; private functions
 ;;
 
