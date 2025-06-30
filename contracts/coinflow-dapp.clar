@@ -759,3 +759,500 @@
 
 ;; public functions
 ;;
+
+;; ========================================
+;; USER MANAGEMENT FUNCTIONS
+;; ========================================
+
+;; Register a new user
+(define-public (register-user (username (string-ascii 30)) (email (string-ascii 100)))
+    (let ((user tx-sender)
+          (current-time (get-current-time)))
+        ;; Check if contract is paused
+        (asserts! (not (is-contract-paused)) ERR-UNAUTHORIZED)
+        ;; Check if user already exists
+        (asserts! (is-none (map-get? users {user-address: user})) ERR-DUPLICATE-ENTRY)
+        ;; Validate input lengths
+        (asserts! (is-valid-string-length username u30) ERR-INVALID-AMOUNT)
+        (asserts! (is-valid-string-length email u100) ERR-INVALID-AMOUNT)
+        
+        ;; Create user record
+        (map-set users
+            {user-address: user}
+            {
+                username: username,
+                email: email,
+                created-at: current-time,
+                last-active: current-time,
+                total-transactions: u0,
+                total-wallets: u0,
+                status: STATUS-ACTIVE,
+                preferences: {
+                    default-currency: STX-SYMBOL,
+                    timezone: "UTC",
+                    notifications-enabled: true,
+                    theme: "light"
+                }
+            })
+        
+        ;; Initialize user counters
+        (init-user-counters user)
+        
+        ;; Update global counter
+        (var-set total-users (+ (var-get total-users) u1))
+        
+        (ok true)))
+
+;; Update user profile
+(define-public (update-user-profile (username (string-ascii 30)) (email (string-ascii 100)))
+    (let ((user tx-sender)
+          (current-time (get-current-time)))
+        ;; Check if user exists
+        (match (map-get? users {user-address: user})
+            user-data
+            (begin
+                ;; Validate input lengths
+                (asserts! (is-valid-string-length username u30) ERR-INVALID-AMOUNT)
+                (asserts! (is-valid-string-length email u100) ERR-INVALID-AMOUNT)
+                
+                ;; Update user record
+                (map-set users
+                    {user-address: user}
+                    (merge user-data {
+                        username: username,
+                        email: email,
+                        last-active: current-time
+                    }))
+                (ok true))
+            ERR-NOT-FOUND)))
+
+;; ========================================
+;; WALLET MANAGEMENT FUNCTIONS
+;; ========================================
+
+;; Create a new wallet
+(define-public (create-wallet (name (string-ascii 30)) (wallet-type (string-ascii 20)) (description (string-ascii 200)))
+    (let ((user tx-sender)
+          (wallet-id (get-next-wallet-id))
+          (current-time (get-current-time)))
+        ;; Check if contract is paused
+        (asserts! (not (is-contract-paused)) ERR-UNAUTHORIZED)
+        ;; Check if user exists
+        (asserts! (is-some (map-get? users {user-address: user})) ERR-NOT-FOUND)
+        ;; Validate inputs
+        (asserts! (is-valid-string-length name u30) ERR-INVALID-AMOUNT)
+        (asserts! (is-valid-wallet-type wallet-type) ERR-INVALID-WALLET)
+        (asserts! (is-valid-string-length description u200) ERR-INVALID-AMOUNT)
+        
+        ;; Create wallet record
+        (map-set wallets
+            {wallet-id: wallet-id}
+            {
+                owner: user,
+                name: name,
+                wallet-type: wallet-type,
+                currency: STX-SYMBOL,
+                balance: u0,
+                created-at: current-time,
+                updated-at: current-time,
+                status: STATUS-ACTIVE,
+                description: description,
+                is-default: false
+            })
+        
+        ;; Add wallet to user's wallet list
+        (add-wallet-to-user user wallet-id)
+        
+        ;; Update counters
+        (increment-user-wallet-count user)
+        (var-set total-wallets (+ (var-get total-wallets) u1))
+        
+        (ok wallet-id)))
+
+;; Get wallet details
+(define-read-only (get-wallet (wallet-id uint))
+    (let ((user tx-sender))
+        ;; Check if user can view wallet
+        (asserts! (can-view-wallet wallet-id user) ERR-UNAUTHORIZED)
+        (ok (map-get? wallets {wallet-id: wallet-id}))))
+
+;; Update wallet
+(define-public (update-wallet (wallet-id uint) (name (string-ascii 30)) (description (string-ascii 200)))
+    (let ((user tx-sender)
+          (current-time (get-current-time)))
+        ;; Check if user can edit wallet
+        (asserts! (can-edit-wallet wallet-id user) ERR-UNAUTHORIZED)
+        ;; Validate inputs
+        (asserts! (is-valid-string-length name u30) ERR-INVALID-AMOUNT)
+        (asserts! (is-valid-string-length description u200) ERR-INVALID-AMOUNT)
+        
+        ;; Update wallet
+        (match (map-get? wallets {wallet-id: wallet-id})
+            wallet-data
+            (begin
+                (map-set wallets
+                    {wallet-id: wallet-id}
+                    (merge wallet-data {
+                        name: name,
+                        description: description,
+                        updated-at: current-time
+                    }))
+                (ok true))
+            ERR-NOT-FOUND)))
+
+;; ========================================
+;; TRANSACTION MANAGEMENT FUNCTIONS
+;; ========================================
+
+;; Add a new transaction
+(define-public (add-transaction 
+    (wallet-id uint) 
+    (transaction-type (string-ascii 20)) 
+    (amount uint) 
+    (category (string-ascii 50)) 
+    (description (string-ascii 200))
+    (tags (list 10 (string-ascii 30))))
+    (let ((user tx-sender)
+          (transaction-id (get-next-transaction-id))
+          (current-time (get-current-time)))
+        ;; Check if contract is paused
+        (asserts! (not (is-contract-paused)) ERR-UNAUTHORIZED)
+        ;; Check if user can edit wallet
+        (asserts! (can-edit-wallet wallet-id user) ERR-UNAUTHORIZED)
+        ;; Validate inputs
+        (asserts! (is-valid-amount amount) ERR-INVALID-AMOUNT)
+        (asserts! (is-valid-transaction-type transaction-type) ERR-INVALID-CATEGORY)
+        (asserts! (is-valid-string-length description u200) ERR-INVALID-AMOUNT)
+        ;; Check transaction limit
+        (asserts! (not (has-reached-transaction-limit user)) ERR-TRANSACTION-LIMIT-EXCEEDED)
+        
+        ;; Create transaction record
+        (map-set transactions
+            {transaction-id: transaction-id}
+            {
+                wallet-id: wallet-id,
+                user-address: user,
+                transaction-type: transaction-type,
+                amount: amount,
+                category: category,
+                subcategory: "",
+                description: description,
+                date: current-time,
+                created-at: current-time,
+                updated-at: current-time,
+                status: STATUS-COMPLETED,
+                tags: tags,
+                reference-id: none,
+                from-wallet: none,
+                to-wallet: none,
+                fee: u0,
+                exchange-rate: none,
+                location: none,
+                receipt-hash: none
+            })
+        
+        ;; Update wallet balance
+        (match (map-get? wallets {wallet-id: wallet-id})
+            wallet-data
+            (let ((new-balance (if (is-eq transaction-type TX-TYPE-INCOME)
+                                  (+ (get balance wallet-data) amount)
+                                  (if (>= (get balance wallet-data) amount)
+                                      (- (get balance wallet-data) amount)
+                                      (get balance wallet-data)))))
+                (map-set wallets
+                    {wallet-id: wallet-id}
+                    (merge wallet-data {
+                        balance: new-balance,
+                        updated-at: current-time
+                    })))
+            false)
+        
+        ;; Update lookup tables
+        (add-transaction-to-wallet wallet-id transaction-id)
+        (add-transaction-to-category user category transaction-id)
+        
+        ;; Update counters and aggregations
+        (increment-user-transaction-count user)
+        (update-monthly-summary user amount transaction-type category)
+        (update-category-stats user category amount)
+        (var-set total-transactions (+ (var-get total-transactions) u1))
+        
+        ;; Check for large transaction notification
+        (if (>= amount DEFAULT-LARGE-TRANSACTION-THRESHOLD)
+            (unwrap-panic (create-notification user NOTIFICATION-LARGE-TRANSACTION "Large Transaction" "You made a large transaction" u2))
+            u0)
+        
+        (ok transaction-id)))
+
+;; Get transaction details
+(define-read-only (get-transaction (transaction-id uint))
+    (let ((user tx-sender))
+        (match (map-get? transactions {transaction-id: transaction-id})
+            transaction-data
+            ;; Check if user can view the wallet
+            (if (can-view-wallet (get wallet-id transaction-data) user)
+                (ok (some transaction-data))
+                ERR-UNAUTHORIZED)
+            (ok none))))
+
+;; Update transaction
+(define-public (update-transaction 
+    (transaction-id uint) 
+    (amount uint) 
+    (category (string-ascii 50)) 
+    (description (string-ascii 200)))
+    (let ((user tx-sender)
+          (current-time (get-current-time)))
+        ;; Get transaction
+        (match (map-get? transactions {transaction-id: transaction-id})
+            transaction-data
+            (begin
+                ;; Check if user can edit wallet
+                (asserts! (can-edit-wallet (get wallet-id transaction-data) user) ERR-UNAUTHORIZED)
+                ;; Validate inputs
+                (asserts! (is-valid-amount amount) ERR-INVALID-AMOUNT)
+                (asserts! (is-valid-string-length description u200) ERR-INVALID-AMOUNT)
+                
+                ;; Update transaction
+                (map-set transactions
+                    {transaction-id: transaction-id}
+                    (merge transaction-data {
+                        amount: amount,
+                        category: category,
+                        description: description,
+                        updated-at: current-time
+                    }))
+                (ok true))
+            ERR-NOT-FOUND)))
+
+;; ========================================
+;; CATEGORY MANAGEMENT FUNCTIONS
+;; ========================================
+
+;; Create a new category
+(define-public (create-category 
+    (category-name (string-ascii 50)) 
+    (display-name (string-ascii 50)) 
+    (description (string-ascii 200)) 
+    (color (string-ascii 7)))
+    (let ((user tx-sender)
+          (current-time (get-current-time)))
+        ;; Check if user exists
+        (asserts! (is-some (map-get? users {user-address: user})) ERR-NOT-FOUND)
+        ;; Check if category already exists
+        (asserts! (is-none (map-get? categories {user-address: user, category-name: category-name})) ERR-CATEGORY-EXISTS)
+        ;; Validate inputs
+        (asserts! (is-valid-string-length category-name u50) ERR-INVALID-AMOUNT)
+        (asserts! (is-valid-string-length display-name u50) ERR-INVALID-AMOUNT)
+        (asserts! (is-valid-string-length description u200) ERR-INVALID-AMOUNT)
+        ;; Check category limit
+        (asserts! (not (has-reached-category-limit user)) ERR-TRANSACTION-LIMIT-EXCEEDED)
+        
+        ;; Create category
+        (map-set categories
+            {user-address: user, category-name: category-name}
+            {
+                display-name: display-name,
+                description: description,
+                color: color,
+                icon: "default",
+                is-default: false,
+                is-active: true,
+                created-at: current-time,
+                transaction-count: u0,
+                total-amount: u0,
+                subcategories: (list)
+            })
+        
+        (ok true)))
+
+;; Get user categories
+(define-read-only (get-user-categories)
+    (let ((user tx-sender))
+        ;; This would return a list of categories for the user
+        ;; In a full implementation, we'd iterate through categories
+        (ok (list))))
+
+;; ========================================
+;; BUDGET MANAGEMENT FUNCTIONS
+;; ========================================
+
+;; Create a new budget
+(define-public (create-budget 
+    (name (string-ascii 50)) 
+    (category (string-ascii 50)) 
+    (amount uint) 
+    (period (string-ascii 20))
+    (wallet-id (optional uint)))
+    (let ((user tx-sender)
+          (budget-id (get-next-budget-id))
+          (current-time (get-current-time))
+          (end-date (calculate-budget-end-date current-time period)))
+        ;; Check if user exists
+        (asserts! (is-some (map-get? users {user-address: user})) ERR-NOT-FOUND)
+        ;; Validate inputs
+        (asserts! (is-valid-string-length name u50) ERR-INVALID-AMOUNT)
+        (asserts! (is-valid-amount amount) ERR-INVALID-AMOUNT)
+        (asserts! (is-valid-budget-period period) ERR-INVALID-BUDGET-PERIOD)
+        ;; Check budget limit
+        (asserts! (not (has-reached-budget-limit user)) ERR-TRANSACTION-LIMIT-EXCEEDED)
+        
+        ;; Create budget
+        (map-set budgets
+            {budget-id: budget-id}
+            {
+                user-address: user,
+                wallet-id: wallet-id,
+                name: name,
+                category: category,
+                amount: amount,
+                spent: u0,
+                period: period,
+                start-date: current-time,
+                end-date: end-date,
+                created-at: current-time,
+                updated-at: current-time,
+                status: STATUS-ACTIVE,
+                alert-threshold: DEFAULT-BUDGET-WARNING-THRESHOLD,
+                auto-renew: false,
+                notifications-sent: u0
+            })
+        
+        ;; Update counter
+        (increment-user-budget-count user)
+        
+        (ok budget-id)))
+
+;; Get budget details
+(define-read-only (get-budget (budget-id uint))
+    (let ((user tx-sender))
+        (match (map-get? budgets {budget-id: budget-id})
+            budget-data
+            (if (is-eq (get user-address budget-data) user)
+                (ok (some budget-data))
+                ERR-UNAUTHORIZED)
+            (ok none))))
+
+;; Update budget spent amount
+(define-public (update-budget-spent (budget-id uint) (additional-amount uint))
+    (let ((user tx-sender))
+        (match (map-get? budgets {budget-id: budget-id})
+            budget-data
+            (begin
+                ;; Check if user owns budget
+                (asserts! (is-eq (get user-address budget-data) user) ERR-UNAUTHORIZED)
+                
+                ;; Update spent amount
+                (let ((new-spent (+ (get spent budget-data) additional-amount)))
+                    (map-set budgets
+                        {budget-id: budget-id}
+                        (merge budget-data {
+                            spent: new-spent,
+                            updated-at: (get-current-time)
+                        }))
+                    
+                    ;; Check if alert should be sent
+                    (if (should-send-budget-alert budget-id)
+                        (unwrap-panic (create-notification user NOTIFICATION-BUDGET-WARNING "Budget Alert" "You're approaching your budget limit" u3))
+                        u0)
+                    
+                    (ok true)))
+            ERR-NOT-FOUND)))
+
+;; ========================================
+;; REPORTING FUNCTIONS
+;; ========================================
+
+;; Generate expense summary report
+(define-public (generate-expense-report (start-date uint) (end-date uint) (wallet-ids (list 10 uint)))
+    (let ((user tx-sender)
+          (report-id (get-next-report-id))
+          (current-time (get-current-time)))
+        ;; Validate dates
+        (asserts! (is-valid-date start-date) ERR-INVALID-DATE)
+        (asserts! (is-valid-date end-date) ERR-INVALID-DATE)
+        (asserts! (< start-date end-date) ERR-INVALID-TIMEFRAME)
+        
+        ;; Create report record
+        (map-set reports
+            {report-id: report-id}
+            {
+                user-address: user,
+                report-type: REPORT-TYPE-EXPENSE-SUMMARY,
+                parameters: {
+                    start-date: start-date,
+                    end-date: end-date,
+                    wallet-ids: wallet-ids,
+                    categories: (list)
+                },
+                generated-at: current-time,
+                data-hash: "pending",
+                status: STATUS-PENDING,
+                file-url: none
+            })
+        
+        (ok report-id)))
+
+;; Get monthly summary
+(define-read-only (get-monthly-summary (year uint) (month uint))
+    (let ((user tx-sender))
+        (ok (map-get? monthly-summaries {user-address: user, year: year, month: month}))))
+
+;; ========================================
+;; NOTIFICATION FUNCTIONS
+;; ========================================
+
+;; Get user notifications
+(define-read-only (get-user-notifications (limit uint))
+    (let ((user tx-sender))
+        ;; This would return user's notifications
+        ;; In full implementation, would iterate and filter
+        (ok (list))))
+
+;; Mark notification as read
+(define-public (mark-notification-read (notification-id uint))
+    (let ((user tx-sender)
+          (current-time (get-current-time)))
+        (match (map-get? notifications {notification-id: notification-id})
+            notification-data
+            (begin
+                ;; Check if user owns notification
+                (asserts! (is-eq (get user-address notification-data) user) ERR-UNAUTHORIZED)
+                
+                ;; Mark as read
+                (map-set notifications
+                    {notification-id: notification-id}
+                    (merge notification-data {
+                        is-read: true,
+                        read-at: (some current-time)
+                    }))
+                (ok true))
+            ERR-NOT-FOUND)))
+
+;; ========================================
+;; ADMIN FUNCTIONS
+;; ========================================
+
+;; Pause contract (owner only)
+(define-public (pause-contract)
+    (begin
+        (asserts! (is-contract-owner tx-sender) ERR-UNAUTHORIZED)
+        (var-set contract-paused true)
+        (ok true)))
+
+;; Unpause contract (owner only)
+(define-public (unpause-contract)
+    (begin
+        (asserts! (is-contract-owner tx-sender) ERR-UNAUTHORIZED)
+        (var-set contract-paused false)
+        (ok true)))
+
+;; Get contract stats (read-only)
+(define-read-only (get-contract-stats)
+    (ok {
+        total-users: (var-get total-users),
+        total-transactions: (var-get total-transactions),
+        total-wallets: (var-get total-wallets),
+        contract-paused: (var-get contract-paused),
+        version: CONTRACT-VERSION
+    }))
