@@ -443,6 +443,14 @@
     (and (> timestamp u0)
          (< timestamp u4102444800))) ;; Year 2100
 
+;; Validate tags list (check each tag is valid length)
+(define-private (is-valid-tags (tags (list 10 (string-ascii 30))))
+    (is-eq (len (filter is-valid-tag tags)) (len tags)))
+
+;; Helper function to validate individual tag
+(define-private (is-valid-tag (tag (string-ascii 30)))
+    (is-valid-string-length tag u30))
+
 ;; ========================================
 ;; AUTHORIZATION FUNCTIONS
 ;; ========================================
@@ -923,6 +931,8 @@
         (asserts! (is-valid-amount amount) ERR-INVALID-AMOUNT)
         (asserts! (is-valid-transaction-type transaction-type) ERR-INVALID-CATEGORY)
         (asserts! (is-valid-string-length description u200) ERR-INVALID-AMOUNT)
+        (asserts! (is-valid-string-length category u50) ERR-INVALID-AMOUNT)
+        (asserts! (is-valid-tags tags) ERR-INVALID-AMOUNT)
         ;; Check transaction limit
         (asserts! (not (has-reached-transaction-limit user)) ERR-TRANSACTION-LIMIT-EXCEEDED)
         
@@ -1045,6 +1055,7 @@
         (asserts! (is-valid-string-length category-name u50) ERR-INVALID-AMOUNT)
         (asserts! (is-valid-string-length display-name u50) ERR-INVALID-AMOUNT)
         (asserts! (is-valid-string-length description u200) ERR-INVALID-AMOUNT)
+        (asserts! (is-valid-string-length color u7) ERR-INVALID-AMOUNT)
         ;; Check category limit
         (asserts! (not (has-reached-category-limit user)) ERR-TRANSACTION-LIMIT-EXCEEDED)
         
@@ -1092,6 +1103,7 @@
         (asserts! (is-some (map-get? users {user-address: user})) ERR-NOT-FOUND)
         ;; Validate inputs
         (asserts! (is-valid-string-length name u50) ERR-INVALID-AMOUNT)
+        (asserts! (is-valid-string-length category u50) ERR-INVALID-AMOUNT)
         (asserts! (is-valid-amount amount) ERR-INVALID-AMOUNT)
         (asserts! (is-valid-budget-period period) ERR-INVALID-BUDGET-PERIOD)
         ;; Check budget limit

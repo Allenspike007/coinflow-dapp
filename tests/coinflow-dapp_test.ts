@@ -2,6 +2,19 @@
 import { Clarinet, Tx, Chain, Account, types } from 'https://deno.land/x/clarinet@v0.14.0/index.ts';
 import { assertEquals, assert } from 'https://deno.land/std@0.90.0/testing/asserts.ts';
 
+// Helper function to check if result is success
+function isSuccess(result: string): boolean {
+    return result.startsWith('(ok');
+}
+
+// Helper function to check if result is error
+function isError(result: string, errorCode?: string): boolean {
+    if (errorCode) {
+        return result === `(err ${errorCode})`;
+    }
+    return result.startsWith('(err ');
+}
+
 Clarinet.test({
     name: "Basic contract functionality test",
     async fn(chain: Chain, accounts: Map<string, Account>) {
@@ -14,7 +27,7 @@ Clarinet.test({
         ]);
         
         const receipt = block.receipts[0];
-        assertEquals(receipt.result, 'Ok');
+        assert(isSuccess(receipt.result));
         
         // Test user registration
         block = chain.mineBlock([
@@ -24,7 +37,7 @@ Clarinet.test({
             ], user1.address)
         ]);
         
-        assertEquals(block.receipts[0].result, 'Ok');
+        assert(isSuccess(block.receipts[0].result));
         
         // Test wallet creation
         block = chain.mineBlock([
@@ -35,7 +48,7 @@ Clarinet.test({
             ], user1.address)
         ]);
         
-        assertEquals(block.receipts[0].result, 'Ok');
+        assert(isSuccess(block.receipts[0].result));
         
         // Test category creation
         block = chain.mineBlock([
@@ -47,20 +60,20 @@ Clarinet.test({
             ], user1.address)
         ]);
         
-        assertEquals(block.receipts[0].result, 'Ok');
+        assert(isSuccess(block.receipts[0].result));
         
         // Test admin functions
         block = chain.mineBlock([
             Tx.contractCall('coinflow-dapp', 'pause-contract', [], deployer.address)
         ]);
         
-        assertEquals(block.receipts[0].result, 'Ok');
+        assert(isSuccess(block.receipts[0].result));
         
         block = chain.mineBlock([
             Tx.contractCall('coinflow-dapp', 'unpause-contract', [], deployer.address)
         ]);
         
-        assertEquals(block.receipts[0].result, 'Ok');
+        assert(isSuccess(block.receipts[0].result));
     },
 });
 
@@ -78,7 +91,8 @@ Clarinet.test({
             ], user1.address)
         ]);
         
-        assertEquals(block.receipts[0].result, 'Ok');
+        console.log('First user registration result:', block.receipts[0].result);
+        assert(isSuccess(block.receipts[0].result));
         
         // Register second user
         block = chain.mineBlock([
@@ -88,7 +102,8 @@ Clarinet.test({
             ], user2.address)
         ]);
         
-        assertEquals(block.receipts[0].result, 'Ok');
+        console.log('Second user registration result:', block.receipts[0].result);
+        assert(isSuccess(block.receipts[0].result));
         
         // Test duplicate registration (should fail)
         block = chain.mineBlock([
@@ -98,7 +113,8 @@ Clarinet.test({
             ], user1.address)
         ]);
         
-        assertEquals(block.receipts[0].result, 'Err(u106)'); // ERR-DUPLICATE-ENTRY
+        console.log('Duplicate registration result:', block.receipts[0].result);
+        assert(isError(block.receipts[0].result, 'u106')); // ERR-DUPLICATE-ENTRY
         
         // Test profile update
         block = chain.mineBlock([
@@ -108,7 +124,8 @@ Clarinet.test({
             ], user1.address)
         ]);
         
-        assertEquals(block.receipts[0].result, 'Ok');
+        console.log('Profile update result:', block.receipts[0].result);
+        assert(isSuccess(block.receipts[0].result));
     },
 });
 
@@ -134,7 +151,7 @@ Clarinet.test({
             ], user1.address)
         ]);
         
-        assertEquals(block.receipts[0].result, 'Ok');
+        assert(isSuccess(block.receipts[0].result));
         
         // Get wallet ID from result
         const walletId = parseInt(block.receipts[0].result.replace('(ok u', '').replace(')', ''));
@@ -146,7 +163,7 @@ Clarinet.test({
             ], user1.address)
         ]);
         
-        assertEquals(block.receipts[0].result, 'Ok');
+        assert(isSuccess(block.receipts[0].result));
         
         // Test wallet update
         block = chain.mineBlock([
@@ -157,7 +174,7 @@ Clarinet.test({
             ], user1.address)
         ]);
         
-        assertEquals(block.receipts[0].result, 'Ok');
+        assert(isSuccess(block.receipts[0].result));
         
         // Test unauthorized access
         const user2 = getAccount(accounts, 'wallet_2');
@@ -167,7 +184,7 @@ Clarinet.test({
             ], user2.address)
         ]);
         
-        assertEquals(block.receipts[0].result, 'Err(u100)'); // ERR-UNAUTHORIZED
+        assert(isError(block.receipts[0].result, 'u100')); // ERR-UNAUTHORIZED
     },
 });
 
@@ -206,7 +223,7 @@ Clarinet.test({
             ], user1.address)
         ]);
         
-        assertEquals(block.receipts[0].result, 'Ok');
+        assert(isSuccess(block.receipts[0].result));
         const incomeTxId = parseInt(block.receipts[0].result.replace('(ok u', '').replace(')', ''));
         
         // Test adding expense transaction
@@ -221,7 +238,7 @@ Clarinet.test({
             ], user1.address)
         ]);
         
-        assertEquals(block.receipts[0].result, 'Ok');
+        assert(isSuccess(block.receipts[0].result));
         const expenseTxId = parseInt(block.receipts[0].result.replace('(ok u', '').replace(')', ''));
         
         // Test get transaction
@@ -231,7 +248,7 @@ Clarinet.test({
             ], user1.address)
         ]);
         
-        assertEquals(block.receipts[0].result, 'Ok');
+        assert(isSuccess(block.receipts[0].result));
         
         // Test update transaction
         block = chain.mineBlock([
@@ -243,7 +260,7 @@ Clarinet.test({
             ], user1.address)
         ]);
         
-        assertEquals(block.receipts[0].result, 'Ok');
+        assert(isSuccess(block.receipts[0].result));
     },
 });
 
@@ -270,7 +287,7 @@ Clarinet.test({
             ], user1.address)
         ]);
         
-        assertEquals(block.receipts[0].result, 'Ok');
+        assert(isSuccess(block.receipts[0].result));
         
         // Test duplicate category creation (should fail)
         block = chain.mineBlock([
@@ -282,14 +299,14 @@ Clarinet.test({
             ], user1.address)
         ]);
         
-        assertEquals(block.receipts[0].result, 'Err(u109)'); // ERR-CATEGORY-EXISTS
+        assert(isError(block.receipts[0].result, 'u109')); // ERR-CATEGORY-EXISTS
         
         // Test get user categories
         block = chain.mineBlock([
             Tx.contractCall('coinflow-dapp', 'get-user-categories', [], user1.address)
         ]);
         
-        assertEquals(block.receipts[0].result, 'Ok');
+        assert(isSuccess(block.receipts[0].result));
     },
 });
 
@@ -327,7 +344,7 @@ Clarinet.test({
             ], user1.address)
         ]);
         
-        assertEquals(block.receipts[0].result, 'Ok');
+        assert(isSuccess(block.receipts[0].result));
         const budgetId = parseInt(block.receipts[0].result.replace('(ok u', '').replace(')', ''));
         
         // Test get budget
@@ -337,7 +354,7 @@ Clarinet.test({
             ], user1.address)
         ]);
         
-        assertEquals(block.receipts[0].result, 'Ok');
+        assert(isSuccess(block.receipts[0].result));
         
         // Test update budget spent
         block = chain.mineBlock([
@@ -347,7 +364,7 @@ Clarinet.test({
             ], user1.address)
         ]);
         
-        assertEquals(block.receipts[0].result, 'Ok');
+        assert(isSuccess(block.receipts[0].result));
     },
 });
 
@@ -362,21 +379,21 @@ Clarinet.test({
             Tx.contractCall('coinflow-dapp', 'pause-contract', [], deployer.address)
         ]);
         
-        assertEquals(block.receipts[0].result, 'Ok');
+        assert(isSuccess(block.receipts[0].result));
         
         // Test that regular users cannot pause contract
         block = chain.mineBlock([
             Tx.contractCall('coinflow-dapp', 'pause-contract', [], user1.address)
         ]);
         
-        assertEquals(block.receipts[0].result, 'Err(u100)'); // ERR-UNAUTHORIZED
+        assert(isError(block.receipts[0].result, 'u100')); // ERR-UNAUTHORIZED
         
         // Test unpause contract
         block = chain.mineBlock([
             Tx.contractCall('coinflow-dapp', 'unpause-contract', [], deployer.address)
         ]);
         
-        assertEquals(block.receipts[0].result, 'Ok');
+        assert(isSuccess(block.receipts[0].result));
     },
 });
 
@@ -397,7 +414,7 @@ Clarinet.test({
             ], user1.address)
         ]);
         
-        assertEquals(block.receipts[0].result, 'Err(u100)'); // ERR-UNAUTHORIZED
+        assert(isError(block.receipts[0].result, 'u100')); // ERR-UNAUTHORIZED
         
         // Test invalid budget period
         chain.mineBlock([
@@ -427,7 +444,7 @@ Clarinet.test({
             ], user1.address)
         ]);
         
-        assertEquals(block.receipts[0].result, 'Err(u111)'); // ERR-INVALID-BUDGET-PERIOD
+        assert(isError(block.receipts[0].result, 'u111')); // ERR-INVALID-BUDGET-PERIOD
     },
 });
 
