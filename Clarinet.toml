@@ -8,6 +8,10 @@ requirements = []
 path = "contracts/coinflow-dapp.clar"
 depends_on = []
 
+[contracts.investment-pool]
+path = "contracts/investment-pool.clar"
+depends_on = []
+
 [repl]
 costs_version = 2
 parser_version = 2
